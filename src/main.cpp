@@ -9,9 +9,7 @@
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 
-// ==========================================
 // 1. CONFIGURACIÓN DE RED Y API (Datos de Javi)
-// ==========================================
 const char* WIFI_SSID = "VTR-7297333";
 const char* WIFI_PASSWORD = "Mt3knjhgpWqr";
 const int DISPOSITIVO_ID = 5;
@@ -19,9 +17,7 @@ const int DISPOSITIVO_ID = 5;
 const String URL_BASE = "https://plenaguard-backend.onrender.com";
 const String URL_LECTURAS = URL_BASE + "/api/dispositivos/" + String(DISPOSITIVO_ID) + "/lecturas";
 
-// ==========================================
 // 2. DEFINICIÓN DE PINES Y OBJETOS
-// ==========================================
 #define I2C_SDA 8
 #define I2C_SCL 9
 #define PIN_BOTON 6
@@ -32,9 +28,7 @@ CRGB leds[NUM_LEDS];
 MAX30105 sensorPulso;
 Adafruit_MPU6050 mpu;
 
-// ==========================================
 // 3. INICIO DEL DISPOSITIVO (SETUP)
-// ==========================================
 void setup() {
   Serial.begin(115200);
   Wire.begin(I2C_SDA, I2C_SCL); 
@@ -82,9 +76,7 @@ void setup() {
   FastLED.show();
 }
 
-// ==========================================
 // 4. LÓGICA PRINCIPAL (LOOP)
-// ==========================================
 void loop() {
   // Aquí pondremos la lógica de caídas, pulso y botón
 }
