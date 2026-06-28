@@ -9,8 +9,8 @@
 // ==========================================
 // 1. CONFIGURACIÓN DE RED Y API
 // ==========================================
-const char* WIFI_SSID = "HASON";
-const char* WIFI_PASSWORD = "encUCacdJcea";
+const char* WIFI_SSID = "Ale";
+const char* WIFI_PASSWORD = "Rc4Id0+G";
 const int DISPOSITIVO_ID = 5;
 
 const String URL_BASE = "https://plenaguard-backend.onrender.com";
@@ -19,8 +19,8 @@ const String URL_LECTURAS = URL_BASE + "/api/dispositivos/" + String(DISPOSITIVO
 // ==========================================
 // 2. DEFINICIÓN DE PINES
 // ==========================================
-#define I2C_SDA 8
-#define I2C_SCL 9
+#define I2C_SDA 7
+#define I2C_SCL 8
 #define PIN_BOTON 6     // Alternar Modo Deporte
 #define PIN_BUZZER 5    // Zumbador de alertas
 #define PIN_BATERIA 4   // Pin analógico para medir batería LiPo
@@ -84,17 +84,31 @@ void bipConfirmacion() {
 }
 
 void enviarDato(int bpm, String mov, String modo) {
-  if (WiFi.status() != WL_CONNECTED) return;
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("❌ WiFi no conectado.");
+    return;
+  }
   
+  // 1. Preparamos el cliente seguro
   WiFiClientSecure client; 
   client.setInsecure(); 
+  
+  // ¡LA NUEVA LÍNEA CLAVE! Paciencia de 30 segs para el saludo de seguridad
+  client.setHandshakeTimeout(30000); 
+
+  // 2. Preparamos el cliente HTTP
   HTTPClient http;
   
+  // Paciencia de 30 segs para la respuesta de la base de datos
+  http.setTimeout(30000); 
+  
+  // 3. Iniciamos conexión
   http.begin(client, URL_LECTURAS);
   http.addHeader("Content-Type", "application/json");
   
   int nivelBateria = leerBateria();
 
+  // 4. Armamos el JSON
   String body = "{\"frecuencia_cardiaca\":" + String(bpm) + 
                 ",\"spo2\":98" + 
                 ",\"bateria\":" + String(nivelBateria) +
@@ -102,7 +116,23 @@ void enviarDato(int bpm, String mov, String modo) {
                 "\",\"modo_uso\":\"" + modo + "\"}";
   
   Serial.println("\n>>> [API POST]: " + body);
-  http.POST(body);
+  
+  // 5. Enviamos y revisamos qué pasó
+  int httpResponseCode = http.POST(body);
+  
+  if (httpResponseCode > 0) {
+    Serial.print("✅ POST Exitoso. Código: ");
+    Serial.println(httpResponseCode);
+    
+    // Esto imprimirá lo que tu API responde (ej. "Dato guardado correctamente")
+    Serial.println("Respuesta: " + http.getString()); 
+  } else {
+    Serial.print("❌ Error en POST: ");
+    Serial.println(httpResponseCode);
+    // Esto traducirá el error a texto para entenderlo mejor
+    Serial.println(http.errorToString(httpResponseCode).c_str());
+  }
+  
   http.end();
 }
 
@@ -129,7 +159,7 @@ void setup() {
   Wire.beginTransmission(MPU_ADDR); Wire.write(0x6B); Wire.write(0); Wire.endTransmission(true);
   Serial.println("✅ MPU6050 Listo.");
 
-  if (sensorPulso.begin(Wire, I2C_SPEED_FAST)) {
+  if (sensorPulso.begin(Wire, I2C_SPEED_STANDARD)) {
     sensorPulso.setup(); 
     sensorPulso.setPulseAmplitudeRed(0x0A); 
     sensorPulso.setPulseAmplitudeIR(0x1F);  
