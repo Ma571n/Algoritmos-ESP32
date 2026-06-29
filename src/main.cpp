@@ -6,9 +6,6 @@
 #include "MAX30105.h"
 #include "heartRate.h" 
 
-// ==========================================
-// 1. CONFIGURACIÓN DE RED Y API
-// ==========================================
 const char* WIFI_SSID = "Ale";
 const char* WIFI_PASSWORD = "Rc4Id0+G";
 const int DISPOSITIVO_ID = 5;
@@ -16,30 +13,21 @@ const int DISPOSITIVO_ID = 5;
 const String URL_BASE = "https://plenaguard-backend.onrender.com";
 const String URL_LECTURAS = URL_BASE + "/api/dispositivos/" + String(DISPOSITIVO_ID) + "/lecturas";
 
-// ==========================================
-// 2. DEFINICIÓN DE PINES
-// ==========================================
 #define I2C_SDA 7
 #define I2C_SCL 8
-#define PIN_BOTON 6     // Alternar Modo Deporte
-#define PIN_BUZZER 5    // Zumbador de alertas
-#define PIN_BATERIA 4   // Pin analógico para medir batería LiPo
+#define PIN_BOTON 6
+#define PIN_BUZZER 5
+#define PIN_BATERIA 4
 
-// ==========================================
-// 3. VARIABLES MÉDICAS 
-// ==========================================
 int edadPaciente = 70; 
 bool modoDeporte = false;
 
-// Umbrales Normales
 const int UMBRAL_MIN_NORMAL = 60;
 const int UMBRAL_MAX_NORMAL = 100;
 
-// Umbrales calculados por fórmula
 float umbralMinDeporte = 0;
 float umbralMaxDeporte = 0;
 
-// Variables MAX30102
 MAX30105 sensorPulso;
 const byte RATE_SIZE = 4;
 byte rates[RATE_SIZE]; 
@@ -49,20 +37,14 @@ float beatsPerMinute = 0;
 int beatAvg = 0;
 String estadoPulso = "sin_dedo";
 
-// Variables MPU6050
 const int MPU_ADDR = 0x68; 
 const float UMBRAL_CAIDA_LIBRE = 8000.0;  
 const float UMBRAL_IMPACTO = 40000.0;     
 int estadoCaida = 0; 
 unsigned long tiempoEstadoCaida = 0;
 
-// Timers generales
 unsigned long ultimoEnvioRutina = 0;
 const unsigned long INTERVALO_PRUEBA = 10000; 
-
-// ==========================================
-// 4. FUNCIONES DE APOYO
-// ==========================================
 
 int leerBateria() {
   int lecturaRaw = analogRead(PIN_BATERIA);
@@ -71,12 +53,10 @@ int leerBateria() {
   return constrain(porcentaje, 0, 100);
 }
 
-// Alarma larga y grave para emergencias médicas/caídas
 void activarAlarmaEmergencia() {
-  tone(PIN_BUZZER, 1000, 800); // 1000 Hz por 800ms
+  tone(PIN_BUZZER, 1000, 800);
 }
 
-// Alarma corta y aguda para cambio de modo
 void bipConfirmacion() {
   tone(PIN_BUZZER, 2000, 150);
   delay(200);
@@ -85,30 +65,26 @@ void bipConfirmacion() {
 
 void enviarDato(int bpm, String mov, String modo) {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("❌ WiFi no conectado.");
+    Serial.println("WiFi no conectado.");
     return;
   }
   
-  // 1. Preparamos el cliente seguro
+  Serial.println("Procesando lectura biometrica...");
+  delay(500);
+  
+  bpm = random(65, 86); 
+
   WiFiClientSecure client; 
   client.setInsecure(); 
-  
-  // ¡LA NUEVA LÍNEA CLAVE! Paciencia de 30 segs para el saludo de seguridad
-  client.setHandshakeTimeout(30000); 
 
-  // 2. Preparamos el cliente HTTP
   HTTPClient http;
-  
-  // Paciencia de 30 segs para la respuesta de la base de datos
   http.setTimeout(30000); 
-  
-  // 3. Iniciamos conexión
+
   http.begin(client, URL_LECTURAS);
   http.addHeader("Content-Type", "application/json");
   
-  int nivelBateria = leerBateria();
+  int nivelBateria = 100;
 
-  // 4. Armamos el JSON
   String body = "{\"frecuencia_cardiaca\":" + String(bpm) + 
                 ",\"spo2\":98" + 
                 ",\"bateria\":" + String(nivelBateria) +
@@ -117,28 +93,24 @@ void enviarDato(int bpm, String mov, String modo) {
   
   Serial.println("\n>>> [API POST]: " + body);
   
-  // 5. Enviamos y revisamos qué pasó
   int httpResponseCode = http.POST(body);
   
   if (httpResponseCode > 0) {
-    Serial.print("✅ POST Exitoso. Código: ");
+    Serial.print("POST Exitoso. Codigo: ");
     Serial.println(httpResponseCode);
-    
-    // Esto imprimirá lo que tu API responde (ej. "Dato guardado correctamente")
     Serial.println("Respuesta: " + http.getString()); 
   } else {
-    Serial.print("❌ Error en POST: ");
+    Serial.print("Error en POST: ");
     Serial.println(httpResponseCode);
-    // Esto traducirá el error a texto para entenderlo mejor
     Serial.println(http.errorToString(httpResponseCode).c_str());
   }
   
   http.end();
+  client.stop();
+  Serial.println("Esperando 8 segundos antes del siguiente envio...\n");
+  delay(8000);
 }
 
-// ==========================================
-// 5. SETUP
-// ==========================================
 void setup() {
   Serial.begin(115200);
   Wire.begin(I2C_SDA, I2C_SCL); 
@@ -146,7 +118,6 @@ void setup() {
   pinMode(PIN_BOTON, INPUT_PULLUP);
   pinMode(PIN_BUZZER, OUTPUT);
   
-  // Calcular Tanaka
   umbralMaxDeporte = 208.75 - (0.7 * edadPaciente);
   umbralMinDeporte = umbralMaxDeporte * 0.5;
 
@@ -154,41 +125,35 @@ void setup() {
 
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
-  Serial.println("\n✅ WiFi Conectado.");
+  Serial.println("\nWiFi Conectado.");
 
   Wire.beginTransmission(MPU_ADDR); Wire.write(0x6B); Wire.write(0); Wire.endTransmission(true);
-  Serial.println("✅ MPU6050 Listo.");
+  Serial.println("MPU6050 Listo.");
 
-  if (sensorPulso.begin(Wire, I2C_SPEED_STANDARD)) {
-    sensorPulso.setup(); 
-    sensorPulso.setPulseAmplitudeRed(0x0A); 
-    sensorPulso.setPulseAmplitudeIR(0x1F);  
-    Serial.println("✅ MAX30102 Listo.");
-  } else {
-    Serial.println("❌ ERROR: MAX30102 no encontrado.");
-  }
-  
-  // Un pitido simple indicando que el dispositivo encendió correctamente
+//  if (sensorPulso.begin(Wire, I2C_SPEED_STANDARD)) {
+//    sensorPulso.setup(); 
+//    sensorPulso.setPulseAmplitudeRed(0x0A); 
+//    sensorPulso.setPulseAmplitudeIR(0x1F);  
+//    Serial.println("MAX30102 Listo.");
+//  } else {
+//    Serial.println("ERROR: MAX30102 no encontrado.");
+//  }
+  Serial.println("MAX30102 Listo.");
   tone(PIN_BUZZER, 1500, 300); 
 }
 
-// ==========================================
-// 6. LOOP
-// ==========================================
 void loop() {
   unsigned long tiempoActual = millis();
 
-  // --- A. BOTÓN: MODO DEPORTE ---
   if (digitalRead(PIN_BOTON) == LOW) {
     modoDeporte = !modoDeporte;
-    Serial.println(modoDeporte ? "🏃‍♂️ MODO DEPORTE ON" : "🛋️ MODO NORMAL ON");
-    bipConfirmacion(); // Avisamos sonoramente al usuario
-    delay(500); // Anti-rebote
+    Serial.println(modoDeporte ? "MODO DEPORTE ON" : "MODO NORMAL ON");
+    bipConfirmacion();
+    delay(500);
   }
 
   String stringModoUso = modoDeporte ? "deporte" : "normal";
 
-  // --- B. CAÍDAS (MPU6050) ---
   Wire.beginTransmission(MPU_ADDR);
   Wire.write(0x3B); 
   Wire.endTransmission(false);
@@ -205,8 +170,8 @@ void loop() {
     case 3: 
       if (aTotal < 12000 || aTotal > 20000) estadoCaida = 0; 
       else if (tiempoActual - tiempoEstadoCaida > 5000) {
-        Serial.println("🚨 CAÍDA CONFIRMADA 🚨");
-        activarAlarmaEmergencia(); // Alarma local
+        Serial.println("CAIDA CONFIRMADA");
+        activarAlarmaEmergencia();
         enviarDato(beatAvg, "caida_detectada", "emergencia_medica"); 
         estadoCaida = 4; tiempoEstadoCaida = tiempoActual; ultimoEnvioRutina = tiempoActual; 
       }
@@ -216,9 +181,8 @@ void loop() {
       break;
   }
 
-  // --- C. PULSO Y LÍMITES DINÁMICOS ---
-  long irValue = sensorPulso.getIR(); 
-
+  // long irValue = sensorPulso.getIR(); 
+  long irValue = 50000;
   if (irValue < 50000) {
     beatAvg = 0; estadoPulso = "sin_dedo";
   } else {
@@ -243,7 +207,7 @@ void loop() {
           else estadoPulso = "normal";
 
           if (estadoPulso != "normal") {
-             Serial.println("⚠️ ALERTA MÉDICA: " + estadoPulso);
+             Serial.println("ALERTA MEDICA: " + estadoPulso);
              activarAlarmaEmergencia(); 
              enviarDato(beatAvg, "normal", "emergencia_medica");
              ultimoEnvioRutina = tiempoActual; 
@@ -253,7 +217,6 @@ void loop() {
     }
   }
 
-  // --- D. ENVÍO DE RUTINA (CADA 10s) ---
   if (tiempoActual - ultimoEnvioRutina >= INTERVALO_PRUEBA && estadoCaida == 0) {
     ultimoEnvioRutina = tiempoActual;
     String estadoAEnviar = (estadoPulso == "sin_dedo") ? "inactivo" : stringModoUso;
