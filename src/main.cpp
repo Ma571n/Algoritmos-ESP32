@@ -10,12 +10,18 @@ const char* WIFI_SSID = "Ale";
 const char* WIFI_PASSWORD = "Rc4Id0+G";
 const int DISPOSITIVO_ID = 5;
 
+const int BOTON_PIN = 0;
+const int LED_PIN = 8; // El LED integrado del C3 Super Mini
+unsigned long tiempoPresionado = 0;
+bool botonEstadoAnterior = HIGH;
+bool modoDeportivo = false;
+
 const String URL_BASE = "https://plenaguard-backend.onrender.com";
 const String URL_LECTURAS = URL_BASE + "/api/dispositivos/" + String(DISPOSITIVO_ID) + "/lecturas";
 
 #define I2C_SDA 7
 #define I2C_SCL 8
-#define PIN_BOTON 6
+#define PIN_BOTON 0
 #define PIN_BUZZER 5
 #define PIN_BATERIA 4
 
@@ -127,33 +133,62 @@ void setup() {
   while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
   Serial.println("\nWiFi Conectado.");
 
-  Wire.beginTransmission(MPU_ADDR); Wire.write(0x6B); Wire.write(0); Wire.endTransmission(true);
+  Wire.beginTransmission(MPU_ADDR); 
+  Wire.write(0x6B); 
+  Wire.write(0); 
+  Wire.endTransmission(true);
   Serial.println("MPU6050 Listo.");
 
-//  if (sensorPulso.begin(Wire, I2C_SPEED_STANDARD)) {
-//    sensorPulso.setup(); 
-//    sensorPulso.setPulseAmplitudeRed(0x0A); 
-//    sensorPulso.setPulseAmplitudeIR(0x1F);  
-//    Serial.println("MAX30102 Listo.");
-//  } else {
-//    Serial.println("ERROR: MAX30102 no encontrado.");
-//  }
   Serial.println("MAX30102 Listo.");
   tone(PIN_BUZZER, 1500, 300); 
+
+  // Habilita despertar desde Deep Sleep con el PIN_BOTON
+  esp_deep_sleep_enable_gpio_wakeup(1ULL << PIN_BOTON, ESP_GPIO_WAKEUP_GPIO_LOW);
 }
 
 void loop() {
   unsigned long tiempoActual = millis();
 
-  if (digitalRead(PIN_BOTON) == LOW) {
-    modoDeporte = !modoDeporte;
-    Serial.println(modoDeporte ? "MODO DEPORTE ON" : "MODO NORMAL ON");
-    bipConfirmacion();
-    delay(500);
+  // --- 1. LÓGICA MULTIFUNCIÓN DEL BOTÓN ---
+  bool botonEstadoActual = digitalRead(PIN_BOTON);
+
+  // Cuando se presiona el botón hacia abajo
+  if (botonEstadoActual == LOW && botonEstadoAnterior == HIGH) {
+    tiempoPresionado = tiempoActual;
   }
 
+  // Cuando se suelta (Toque corto: Cambia modo)
+  if (botonEstadoActual == HIGH && botonEstadoAnterior == LOW) {
+    if (tiempoActual - tiempoPresionado < 1000) {
+      modoDeporte = !modoDeporte;
+      
+      if (modoDeporte) {
+        Serial.println("MODO DEPORTE ON");
+        tone(PIN_BUZZER, 2000, 150); // Tono agudo
+      } else {
+        Serial.println("MODO NORMAL ON");
+        tone(PIN_BUZZER, 1000, 150); // Tono medio
+      }
+    }
+  }
+
+  // Cuando se mantiene presionado (Toque largo: Deep Sleep)
+  if (botonEstadoActual == LOW && botonEstadoAnterior == LOW) {
+    if (tiempoActual - tiempoPresionado >= 3000) {
+      Serial.println("💤 DEEP SLEEP ACTIVADO (Ahorro de batería)");
+      tone(PIN_BUZZER, 500, 600); // Tono grave y largo de apagado
+      delay(700); 
+      esp_deep_sleep_start(); // Apaga el ESP32-C3
+    }
+  }
+
+  botonEstadoAnterior = botonEstadoActual;
+
+
+  // --- 2. LÓGICA DE SENSORES Y ENVÍO ---
   String stringModoUso = modoDeporte ? "deporte" : "normal";
 
+  // Lectura Acelerómetro (MPU6050)
   Wire.beginTransmission(MPU_ADDR);
   Wire.write(0x3B); 
   Wire.endTransmission(false);
@@ -163,6 +198,7 @@ void loop() {
   int16_t AcZ = Wire.read() << 8 | Wire.read(); 
   float aTotal = sqrt(pow((float)AcX, 2) + pow((float)AcY, 2) + pow((float)AcZ, 2));
 
+  // Máquina de estados: Detección de Caída
   switch(estadoCaida) {
     case 0: if (aTotal < UMBRAL_CAIDA_LIBRE) { estadoCaida = 1; tiempoEstadoCaida = tiempoActual; } break;
     case 1: if (aTotal > UMBRAL_IMPACTO) { estadoCaida = 2; tiempoEstadoCaida = tiempoActual; } else if (tiempoActual - tiempoEstadoCaida > 1000) estadoCaida = 0; break;
@@ -181,6 +217,7 @@ void loop() {
       break;
   }
 
+  // Lectura Sensor de Pulso
   // long irValue = sensorPulso.getIR(); 
   long irValue = 50000;
   if (irValue < 50000) {
@@ -217,6 +254,7 @@ void loop() {
     }
   }
 
+  // Envío Rutinario de Datos
   if (tiempoActual - ultimoEnvioRutina >= INTERVALO_PRUEBA && estadoCaida == 0) {
     ultimoEnvioRutina = tiempoActual;
     String estadoAEnviar = (estadoPulso == "sin_dedo") ? "inactivo" : stringModoUso;
